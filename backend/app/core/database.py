@@ -1,12 +1,19 @@
 import logging
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+def _is_sqlite(url: str) -> bool:
+    return url.startswith("sqlite")
+
+def _is_postgres(url: str) -> bool:
+    # Covers postgresql://, postgres://, postgresql+psycopg2://, postgresql+psycopg:// (Neon/Render)
+    return url.startswith(("postgresql://", "postgres://", "postgresql+"))
+
 connect_args = {}
-if settings.DATABASE_URL.startswith("sqlite"):
+if _is_sqlite(settings.DATABASE_URL):
     connect_args = {"check_same_thread": False}
 
 engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
@@ -24,9 +31,8 @@ def init_db():
     from app.models import models
     Base.metadata.create_all(bind=engine)
     # Harden SQLite against corruption (WAL + NORMAL, 32k busy timeout) — critical for 200k+ row datasets on Windows
-    if settings.DATABASE_URL.startswith("sqlite"):
+    if _is_sqlite(settings.DATABASE_URL):
         try:
-            from sqlalchemy import text
             with engine.connect() as conn:
                 conn.execute(text("PRAGMA journal_mode=WAL;"))
                 conn.execute(text("PRAGMA synchronous=NORMAL;"))
@@ -36,13 +42,56 @@ def init_db():
                 conn.commit()
         except Exception as e:
             logger.warning(f"SQLite pragma setup failed: {e}")
-    # Lightweight migration for new Monitor and Report columns (SQLite)
+
+    # Lightweight migration for new Monitor and Report columns — dialect-agnostic
+    # Uses SQLAlchemy inspect(engine) so it works on both SQLite (local) and PostgreSQL (Neon/Render prod).
+    # Fallback to information_schema.columns on Postgres if inspect fails.
     try:
-        from sqlalchemy import text
+        inspector = inspect(engine)
+        is_pg = _is_postgres(settings.DATABASE_URL) or engine.dialect.name == "postgresql"
+
+        # Map generic SQLite types to PostgreSQL-native types for ALTER TABLE
+        _PG_TYPE_MAP = {
+            "DATETIME": "TIMESTAMP",
+            "VARCHAR": "VARCHAR",
+            "INTEGER": "INTEGER",
+            "BOOLEAN": "BOOLEAN",
+            "JSON": "JSON",
+        }
+
+        def _effective_type(generic_type: str) -> str:
+            if is_pg:
+                return _PG_TYPE_MAP.get(generic_type, generic_type)
+            return generic_type
+
+        def _get_existing_columns(table_name: str) -> list:
+            """Dialect-agnostic column listing via SQLAlchemy inspect, with fallback."""
+            try:
+                if not inspector.has_table(table_name):
+                    return []
+                return [col["name"] for col in inspector.get_columns(table_name)]
+            except Exception as e:
+                logger.warning(f"inspect.get_columns failed for {table_name}: {e}, trying fallback")
+                # Fallback: ANSI information_schema for Postgres, PRAGMA for SQLite
+                try:
+                    with engine.connect() as conn:
+                        if is_pg or engine.dialect.name == "postgresql":
+                            # ANSI SQL — works on PostgreSQL (Neon)
+                            res = conn.execute(
+                                text("SELECT column_name FROM information_schema.columns WHERE table_name = :table"),
+                                {"table": table_name},
+                            )
+                            return [row[0] for row in res.fetchall()]
+                        else:
+                            res = conn.execute(text(f"PRAGMA table_info({table_name})"))
+                            return [row[1] for row in res.fetchall()]
+                except Exception as fe:
+                    logger.warning(f"Fallback column check failed for {table_name}: {fe}")
+                    return []
+
         with engine.connect() as conn:
             # Monitor columns
-            res = conn.execute(text("PRAGMA table_info(monitors)"))
-            cols = [row[1] for row in res.fetchall()]
+            cols = _get_existing_columns("monitors")
             needed_mon = {
                 "period_start": "DATETIME",
                 "period_end": "DATETIME",
@@ -60,14 +109,27 @@ def init_db():
             }
             for col, typ in needed_mon.items():
                 if col not in cols:
+                    eff_typ = _effective_type(typ)
                     try:
-                        conn.execute(text(f"ALTER TABLE monitors ADD COLUMN {col} {typ}"))
+                        conn.execute(text(f"ALTER TABLE monitors ADD COLUMN {col} {eff_typ}"))
                         conn.commit()
                     except Exception as e:
+                        # Column may already exist concurrently or type mismatch — log and continue
                         logger.warning(f"Migration monitors add {col} failed: {e}")
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+
             # Report columns for reporting workspace
-            res = conn.execute(text("PRAGMA table_info(reports)"))
-            cols = [row[1] for row in res.fetchall()]
+            # Re-inspect after monitors migration in case inspector cache is stale
+            try:
+                inspector.clear_cache()  # SQLAlchemy 2.0
+            except Exception:
+                pass
+            # Re-create inspector to refresh cache for reports check
+            # (inspector caches table info; fresh inspect avoids stale read on Postgres)
+            cols = _get_existing_columns("reports")
             needed_rep = {
                 "dataset_version": "VARCHAR",
                 "dataset_version_number": "INTEGER",
@@ -78,10 +140,16 @@ def init_db():
             }
             for col, typ in needed_rep.items():
                 if col not in cols:
+                    eff_typ = _effective_type(typ)
+                    # JSON needs special handling on Postgres: JSON is valid, JSONB also works; keep JSON for cross-dialect
                     try:
-                        conn.execute(text(f"ALTER TABLE reports ADD COLUMN {col} {typ}"))
+                        conn.execute(text(f"ALTER TABLE reports ADD COLUMN {col} {eff_typ}"))
                         conn.commit()
                     except Exception as e:
                         logger.warning(f"Migration reports add {col} failed: {e}")
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
     except Exception as e:
         logger.warning(f"Migration check failed: {e}")
