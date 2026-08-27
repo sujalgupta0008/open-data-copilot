@@ -1,0 +1,49 @@
+# Secrets — never commit real .env
+.env
+!.env.example
+frontend/.env
+backend/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# Storage & DB — local data, never commit
+storage/*
+!storage/.gitkeep
+backend/storage/*
+!backend/storage/.gitkeep
+*.sqlite
+*.db
+*.db-shm
+*.db-wal
+
+# Frontend
+frontend/dist/
+frontend/node_modules/
+node_modules/
+dist/
+build/
+.parcel-cache/
+
+# Misc
+*.tmp
+*.temp
+tmp/
+temp/
