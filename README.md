@@ -174,7 +174,7 @@ Generate secret: `openssl rand -hex 32`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/auth/register, /login, /me` | Auth + JWT |
-| `POST` | `/api/datasets/upload` | CSV/XLSX/Parquet (50MB) |
+| `POST` | `/api/datasets/upload` | CSV/XLSX/Parquet (**5GB BYOS**, `MAX_UPLOAD_SIZE_BYTES`) |
 | `GET` | `/api/datasets/:id/profile, /preview, /diff, /lineage` | Profile, diff, lineage |
 | `POST` | `/api/datasets/:id/clean/preview, /apply` | Cleaning |
 | `GET` | `/api/datasets/:id/type, /eda, /anomalies` | Intelligence |
@@ -237,7 +237,7 @@ Health checks: `GET /health`, `GET /api/ai/status` (provider, model, fallback)
 - Python execution is in-process sandbox (prod: isolated worker)
 - Mock AI is heuristic; set `GROQ_API_KEY` for Groq
 - Report PDF currently JSON via `reportlab` (PDF stub ready)
-- 50MB upload limit (configurable in `datasets.py`)
+- 5GB upload limit (BYOS, configurable via `MAX_UPLOAD_SIZE_BYTES` in `core/config.py:31`)
 
 ---
 

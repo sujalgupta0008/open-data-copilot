@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     STORAGE_PATH: str = "./storage"
     PORT: int = 8000
+    # Upload limits — BYOS (Google Drive) with streaming supports large datasets
+    MAX_UPLOAD_SIZE_BYTES: int = 5 * 1024 * 1024 * 1024  # 5GB (was 50MB)
     # Google Drive BYOS — Bring Your Own Storage
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""

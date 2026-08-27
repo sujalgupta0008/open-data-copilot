@@ -33,7 +33,8 @@ export default function Datasets(){
     mutationFn: async()=>{
       if(!file) throw new Error('No file')
       const fd=new FormData(); fd.append('file',file)
-      const res=await api.post('/api/datasets/upload', fd, { headers:{'Content-Type':'multipart/form-data'}})
+      // BYOS 5GB uploads can take >60s — allow 10 min for Drive streaming + profiling
+      const res=await api.post('/api/datasets/upload', fd, { headers:{'Content-Type':'multipart/form-data'}, timeout: 600000 })
       return res.data
     },
     onSuccess: (newDs:any)=>{ qc.invalidateQueries({queryKey:['datasets']}); setFile(null); setUploadErrorDetail(null); (window as any).__lastUploadId = newDs?.id; },
@@ -63,16 +64,16 @@ export default function Datasets(){
 
       <Card className="overflow-hidden">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2"><Upload className="h-4 w-4" /> Upload Dataset <HelpTooltip title="Upload">Upload a CSV, XLSX, JSON or Parquet file. We validate column consistency, check for duplicate headers, and generate a quality score. Max 50MB.</HelpTooltip></CardTitle>
-          <span className="text-[11px] rounded-full border bg-slate-50 px-2 py-1 dark:bg-white/5 dark:border-white/10">CSV • XLSX • JSON • Parquet • 50MB</span>
+          <CardTitle className="flex items-center gap-2"><Upload className="h-4 w-4" /> Upload Dataset <HelpTooltip title="Upload">Upload a CSV, XLSX, JSON or Parquet file. We validate column consistency, check for duplicate headers, and generate a quality score. Max 5GB (BYOS).</HelpTooltip></CardTitle>
+          <span className="text-[11px] rounded-full border bg-slate-50 px-2 py-1 dark:bg-white/5 dark:border-white/10">CSV • XLSX • JSON • Parquet • 5GB BYOS</span>
         </CardHeader>
         <CardContent>
           <div onDragOver={e=>{e.preventDefault(); setDragOver(true)}} onDragLeave={()=>setDragOver(false)} onDrop={onDrop} className={`relative rounded-[20px] border-2 border-dashed p-8 text-center transition-all ${dragOver?'bg-[#0b0d18] border-[#0b0d18] text-white dark:bg-white dark:text-[#0b0d18]':'border-slate-200 bg-slate-50/60 dark:bg-white/[0.03] dark:border-white/10'}`}>
             <div className={`mx-auto h-12 w-12 rounded-full border grid place-items-center ${dragOver?'bg-white text-[#0b0d18] dark:bg-[#0b0d18] dark:text-white':'bg-white dark:bg-white/5'}`}><Upload className="h-5 w-5" /></div>
             <p className="text-sm font-medium mt-3">Drag & drop or click to select</p>
-            <p className="text-xs text-slate-500 dark:text-white/50 mt-1">Supported: CSV, XLSX, JSON, Parquet — max 50MB. We check for ragged rows and duplicate columns.</p>
+            <p className="text-xs text-slate-500 dark:text-white/50 mt-1">Supported: CSV, XLSX, JSON, Parquet — max 5GB (BYOS). We check for ragged rows and duplicate columns.</p>
             <input type="file" accept=".csv,.xlsx,.xls,.json,.parquet" onChange={(e:any)=>setFile(e.target.files?.[0]||null)} className="mt-4 text-sm file:mr-3 file:rounded-full file:border file:bg-white file:px-4 file:py-1.5 file:text-sm file:font-medium dark:file:bg-white/10 dark:file:border-white/10" />
-            {file && <div className="mt-3 inline-flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-xs dark:bg-white/5 dark:border-white/10"><FileSpreadsheet className="h-3.5 w-3.5" /> {file.name} • {(file.size/1024).toFixed(1)} KB</div>}
+            {file && <div className="mt-3 inline-flex items-center gap-2 rounded-full border bg-white px-3 py-1.5 text-xs dark:bg-white/5 dark:border-white/10"><FileSpreadsheet className="h-3.5 w-3.5" /> {file.name} • {file.size >= 1024*1024*1024 ? `${(file.size/(1024*1024*1024)).toFixed(2)} GB` : file.size >= 1024*1024 ? `${(file.size/(1024*1024)).toFixed(1)} MB` : `${(file.size/1024).toFixed(1)} KB`}</div>}
             <div className="mt-4">
               <Button disabled={!file||uploadMut.isPending} onClick={()=>uploadMut.mutate()} className="rounded-full">{uploadMut.isPending?'Uploading…':'Upload dataset'}</Button>
             </div>

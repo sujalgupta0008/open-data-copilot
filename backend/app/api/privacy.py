@@ -65,7 +65,7 @@ def get_privacy():
     return {
         "privacy_center": detail,
         "data_isolation": "All datasets are isolated per user; ownership checks on every endpoint.",
-        "file_validation": "Only CSV/XLSX/JSON/Parquet, 50MB limit, validated on upload.",
+        "file_validation": "Only CSV/XLSX/JSON/Parquet, 5GB limit (BYOS), validated on upload.",
         "sql_sandbox": "Only SELECT/WITH allowed; DuckDB in-memory.",
         "python_sandbox": "Restricted globals, blocked os/sys/socket.",
         "secrets": "API keys stored server-side only, never exposed to frontend."

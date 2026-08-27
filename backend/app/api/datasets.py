@@ -106,10 +106,12 @@ async def upload_dataset(file: UploadFile = File(...), current_user: User = Depe
     if ext not in ALLOWED_EXT:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
     content = await file.read()
+    max_size = int(getattr(settings, "MAX_UPLOAD_SIZE_BYTES", 5 * 1024 * 1024 * 1024))
+    max_label = "5GB" if max_size >= 1024*1024*1024 else f"{max_size//(1024*1024)}MB"
     if len(content) == 0:
-        raise HTTPException(status_code=400, detail="Empty file — upload a file with a header row and data. Supported: CSV, XLSX, JSON, Parquet (max 50MB).")
-    if len(content) > 50*1024*1024:
-        raise HTTPException(status_code=400, detail="File too large (max 50MB) — reduce file size or split the dataset.")
+        raise HTTPException(status_code=400, detail=f"Empty file — upload a file with a header row and data. Supported: CSV, XLSX, JSON, Parquet (max {max_label} — BYOS).")
+    if len(content) > max_size:
+        raise HTTPException(status_code=400, detail=f"File too large (max {max_label} — BYOS) — reduce file size or split the dataset.")
     # strict CSV validation BEFORE writing to disk
     if ext == ".csv":
         ok, msg = validate_csv_strict(content, file.filename)
