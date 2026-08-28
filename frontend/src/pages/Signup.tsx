@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/common/Button'
 import { Input } from '@/components/common/Input'
@@ -8,6 +8,22 @@ import api from '@/services/api'
 
 export default function Signup(){
   const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [name,setName]=useState(''); const [err,setErr]=useState(''); const { signup } = useAuth(); const nav=useNavigate()
+  const [searchParams] = useSearchParams()
+
+  // SPA OAuth callback handling - Vercel rewrite ensures /signup?code=... is handled client-side without 404
+  useEffect(() => {
+    const token = searchParams.get('token') || searchParams.get('access_token')
+    const status = searchParams.get('status')
+    const error = searchParams.get('error') || searchParams.get('detail')
+    if (token) {
+      localStorage.setItem('token', token)
+      nav('/dashboard', { replace: true })
+    } else if (status === 'success') {
+      nav('/dashboard', { replace: true })
+    } else if (error || status === 'error') {
+      setErr(decodeURIComponent(error || 'OAuth failed'))
+    }
+  }, [searchParams, nav])
   const submit=async(e:any)=>{
     e.preventDefault(); setErr('');
     // Frontend validation to avoid 422

@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '@/services/api'
 import { User, Palette, Shield, LogOut, Cpu, Info, Check, Bell, Mail, Send } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { driveService } from '@/services/driveService'
 
 function DriveBYOSCard(){
@@ -60,6 +60,24 @@ export default function Settings(){
   const [defaultSlack,setDefaultSlack]=useState<string>(()=> localStorage.getItem('odc-default-slack-webhook')||'')
   const [emailTest,setEmailTest]=useState<string|null>(null)
   const [slackTest,setSlackTest]=useState<string|null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [oauthMsg, setOauthMsg] = useState<string|null>(null)
+
+  // SPA OAuth callback handling - Vercel rewrite ensures /settings?status=success is handled without 404
+  useEffect(() => {
+    const status = searchParams.get('status')
+    const detail = searchParams.get('detail')
+    if (status === 'success') {
+      setOauthMsg('✓ Google Drive connected successfully!')
+      // Clear query params via SPA navigation (no hard reload)
+      setSearchParams({}, { replace: true })
+      setTimeout(() => setOauthMsg(null), 4000)
+    } else if (status === 'error') {
+      setOauthMsg(`OAuth failed: ${detail ? decodeURIComponent(detail) : 'unknown error'}`)
+      setSearchParams({}, { replace: true })
+      setTimeout(() => setOauthMsg(null), 5000)
+    }
+  }, [searchParams, setSearchParams])
   useEffect(()=>{
     const root=document.documentElement
     if(theme==='dark') root.classList.add('dark'); else root.classList.remove('dark')
@@ -71,6 +89,11 @@ export default function Settings(){
   const configured = !!aiStatus?.configured
   return (
     <div className="space-y-6 max-w-[720px]">
+      {oauthMsg && (
+        <div className={`rounded-[12px] border p-3 text-sm ${oauthMsg.includes('✓') ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-300' : 'bg-red-50 border-red-200 text-red-800 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-300'}`}>
+          {oauthMsg}
+        </div>
+      )}
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-slate-600 dark:text-white/60">Profile, appearance, privacy and account.</p>

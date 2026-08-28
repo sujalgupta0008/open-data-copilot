@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/common/Button'
 import { Input } from '@/components/common/Input'
@@ -8,6 +8,30 @@ import api from '@/services/api'
 
 export default function Login(){
   const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [err,setErr]=useState(''); const { login } = useAuth(); const nav=useNavigate()
+  const [searchParams] = useSearchParams()
+
+  // SPA OAuth callback handling - Vercel rewrite ensures /login?code=... or /login?status=... is handled client-side without 404
+  useEffect(() => {
+    const token = searchParams.get('token') || searchParams.get('access_token')
+    const status = searchParams.get('status')
+    const error = searchParams.get('error') || searchParams.get('detail')
+    if (token) {
+      localStorage.setItem('token', token)
+      nav('/dashboard', { replace: true })
+    } else if (status === 'success') {
+      // Backend redirected after Google OAuth to /login?status=success - treat as success
+      nav('/dashboard', { replace: true })
+    } else if (error || status === 'error') {
+      setErr(decodeURIComponent(error || 'OAuth failed'))
+    }
+    // Handle OAuth code without full reload - if code present, exchange via SPA
+    const code = searchParams.get('code')
+    if (code && !token && !status) {
+      // Let backend handle exchange via redirect to /settings?status=success
+      // No hard reload - use SPA navigation to avoid Vercel 404
+      console.log('[oauth] code received on /login, waiting for backend redirect...')
+    }
+  }, [searchParams, nav])
   const submit=async(e:any)=>{
     e.preventDefault(); setErr('');
     if (!email.includes('@')) { setErr('Please enter a valid email'); return }

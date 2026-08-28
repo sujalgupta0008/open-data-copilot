@@ -21,6 +21,7 @@ const Settings = lazy(()=> import('@/pages/Settings'))
 const PrivacyCenter = lazy(()=> import('@/pages/PrivacyCenter'))
 const SharedReport = lazy(()=> import('@/pages/SharedReport'))
 const SharedAnalysis = lazy(()=> import('@/pages/SharedAnalysis'))
+const OAuthCallback = lazy(()=> import('@/pages/OAuthCallback'))
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -126,6 +127,9 @@ export default function App(){
             <Route path="/" element={<Landing/>}/>
             <Route path="/login" element={<Login/>}/>
             <Route path="/signup" element={<Signup/>}/>
+            {/* OAuth callback - handles Google OAuth redirect via SPA without Vercel 404 */}
+            <Route path="/auth/callback" element={<OAuthCallback/>}/>
+            <Route path="/oauth/callback" element={<OAuthCallback/>}/>
             <Route path="/shared/r/:token" element={<SharedReport/>}/>
             <Route path="/shared/a/:token" element={<SharedAnalysis/>}/>
             <Route path="/dashboard" element={<Protected><Dashboard/></Protected>}/>
