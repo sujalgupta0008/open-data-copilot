@@ -7,23 +7,55 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Ca
 import api from '@/services/api'
 
 export default function Signup(){
-  const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [name,setName]=useState(''); const [err,setErr]=useState(''); const { signup } = useAuth(); const nav=useNavigate()
-  const [searchParams] = useSearchParams()
+  const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [name,setName]=useState(''); const [err,setErr]=useState(''); const { signup, loginWithToken, refresh } = useAuth(); const nav=useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  // SPA OAuth callback handling - Vercel rewrite ensures /signup?code=... is handled client-side without 404
+  // SPA OAuth callback handling - Vercel rewrite ensures /signup?token=...&status=success is handled without 404
   useEffect(() => {
-    const token = searchParams.get('token') || searchParams.get('access_token')
-    const status = searchParams.get('status')
-    const error = searchParams.get('error') || searchParams.get('detail')
-    if (token) {
-      localStorage.setItem('token', token)
-      nav('/dashboard', { replace: true })
-    } else if (status === 'success') {
-      nav('/dashboard', { replace: true })
-    } else if (error || status === 'error') {
-      setErr(decodeURIComponent(error || 'OAuth failed'))
+    const urlParams = new URLSearchParams(window.location.search)
+    const token = searchParams.get('token') || searchParams.get('access_token') || urlParams.get('token') || urlParams.get('access_token')
+    const status = searchParams.get('status') || urlParams.get('status')
+    const error = searchParams.get('error') || searchParams.get('detail') || urlParams.get('error') || urlParams.get('detail') || urlParams.get('message')
+    const code = searchParams.get('code') || urlParams.get('code')
+
+    const handleToken = async (t: string) => {
+      try {
+        localStorage.setItem('token', t)
+        await loginWithToken(t)
+        await refresh()
+        setSearchParams({}, { replace: true })
+        nav('/dashboard', { replace: true })
+      } catch {
+        localStorage.setItem('token', t)
+        setSearchParams({}, { replace: true })
+        nav('/dashboard', { replace: true })
+      }
     }
-  }, [searchParams, nav])
+
+    if (token) {
+      void handleToken(token)
+      return
+    }
+    if (status === 'success' && !token) {
+      const existing = localStorage.getItem('token')
+      if (existing) {
+        void refresh().then(() => nav('/dashboard', { replace: true }))
+      } else {
+        setSearchParams({}, { replace: true })
+      }
+      return
+    }
+    if (error || status === 'error') {
+      const msg = decodeURIComponent(error || 'OAuth failed')
+      setErr(msg)
+      console.error('[oauth] error:', msg)
+      setSearchParams({}, { replace: true })
+      return
+    }
+    if (code && !token && !status) {
+      console.log('[oauth] code received on /signup...')
+    }
+  }, [searchParams, nav, loginWithToken, refresh, setSearchParams])
   const submit=async(e:any)=>{
     e.preventDefault(); setErr('');
     // Frontend validation to avoid 422

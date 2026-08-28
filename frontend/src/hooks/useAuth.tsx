@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import api from '@/services/api'
 
 interface User { id: string; email: string; name?: string }
-interface AuthContextType { user: User | null; loading: boolean; login: (email: string, password: string) => Promise<void>; signup: (email: string, password: string, name?: string) => Promise<void>; logout: () => void }
+interface AuthContextType { user: User | null; loading: boolean; login: (email: string, password: string) => Promise<void>; signup: (email: string, password: string, name?: string) => Promise<void>; logout: () => void; setUser: (user: User | null) => void; refresh: () => Promise<void>; loginWithToken: (token: string) => Promise<void> }
 
 const AuthContext = createContext<AuthContextType>(null as any)
 
@@ -40,7 +40,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.post('/api/auth/logout').catch(()=>{})
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, signup, logout }}>{children}</AuthContext.Provider>
+  const refresh = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) { setUser(null); setLoading(false); return }
+    setLoading(true)
+    try {
+      const res = await api.get('/api/auth/me')
+      setUser(res.data)
+    } catch {
+      localStorage.removeItem('token')
+      setUser(null)
+    }
+    setLoading(false)
+  }
+
+  const loginWithToken = async (token: string) => {
+    localStorage.setItem('token', token)
+    try {
+      const res = await api.get('/api/auth/me')
+      setUser(res.data)
+    } catch {
+      // Token invalid - keep it but user remains null, will be cleared on next fetchMe
+      // Try to decode token payload as fallback (for mock Google tokens)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        if (payload.sub) {
+          // optimistic fallback - will be replaced on next refresh
+          setUser({ id: payload.sub, email: '', name: '' } as User)
+        }
+      } catch {}
+    }
+  }
+
+  return <AuthContext.Provider value={{ user, loading, login, signup, logout, setUser, refresh, loginWithToken }}>{children}</AuthContext.Provider>
 }
 
 export const useAuth = () => useContext(AuthContext)

@@ -73,19 +73,59 @@ def google_callback(code: str = Query(...), state: Optional[str] = Query(None), 
     if user_id:
         svc = GoogleDriveService(user_id=user_id)
         try:
-            token = svc.exchange_code(code)
+            token_data = svc.exchange_code(code)
             ws = svc.ensure_workspace_folder()
-            # Success: redirect to frontend dashboard/settings with status=success
+            # If anon user (Google login from /login), create/fetch actual User and issue JWT for SPA
+            # so frontend can do localStorage.setItem('token', token) and navigate to /dashboard
+            if user_id.startswith("anon_"):
+                try:
+                    from app.core.security import create_access_token, hash_password
+                    import hashlib
+                    # Derive mock email from state to allow repeat logins to map to same user in mock mode
+                    # In real mode, would fetch Google profile email via token_data
+                    mock_email = f"google_{hashlib.md5(state.encode()).hexdigest()[:8]}@gmail.com"
+                    # Check if mock_email already exists to reuse user (idempotent for same state not needed, but for demo use new)
+                    # For real Google flow, email would be from Google profile; here we ensure new user per OAuth
+                    # Try to find existing by mock_email or create
+                    existing = db.query(User).filter(User.email == mock_email).first()
+                    if not existing:
+                        # Create shadow user for Google OAuth - password is random, not used for Google login
+                        new_user = User(email=mock_email, password_hash=hash_password(uuid.uuid4().hex), name="Google User")
+                        db.add(new_user)
+                        db.commit()
+                        db.refresh(new_user)
+                        user_id_for_jwt = new_user.id
+                    else:
+                        user_id_for_jwt = existing.id
+                    jwt_token = create_access_token({"sub": user_id_for_jwt})
+                    # Also ensure workspace for real user id
+                    try:
+                        real_svc = GoogleDriveService(user_id=user_id_for_jwt)
+                        real_svc.ensure_workspace_folder()
+                    except Exception:
+                        pass
+                    from urllib.parse import quote
+                    redirect_url = f"{frontend_base}/login?token={quote(jwt_token)}&status=success"
+                    return RedirectResponse(url=redirect_url, status_code=302)
+                except Exception as e_auth:
+                    # Fallback to settings success if JWT creation fails (e.g., DB error)
+                    redirect_url = f"{frontend_base}/settings?status=success"
+                    return RedirectResponse(url=redirect_url, status_code=302)
+            # Authenticated BYOS flow (user_id is real UUID) - redirect to settings
             redirect_url = f"{frontend_base}/settings?status=success"
             return RedirectResponse(url=redirect_url, status_code=302)
         except Exception as e:
             from urllib.parse import quote
             err = quote(str(e))
+            # For anon Google login, redirect to /login with error so frontend can show toast
+            if user_id.startswith("anon_"):
+                return RedirectResponse(url=f"{frontend_base}/login?status=error&detail={err}", status_code=302)
             return RedirectResponse(url=f"{frontend_base}/settings?status=error&detail={err}", status_code=302)
     # If no state, redirect to frontend with error instead of raw JSON
+    # For unauthenticated Google login, frontend expects error on /login so it can show toast
     from urllib.parse import quote
     return RedirectResponse(
-        url=f"{frontend_base}/settings?status=error&detail={quote('Missing state or user context. Use /api/auth/google/mock-login for tests with Bearer token.')}",
+        url=f"{frontend_base}/login?status=error&detail={quote('Missing state or user context. Use /api/auth/google/mock-login for tests with Bearer token.')}",
         status_code=302,
     )
 

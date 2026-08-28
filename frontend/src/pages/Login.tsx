@@ -7,31 +7,71 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/common/Ca
 import api from '@/services/api'
 
 export default function Login(){
-  const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [err,setErr]=useState(''); const { login } = useAuth(); const nav=useNavigate()
-  const [searchParams] = useSearchParams()
+  const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [err,setErr]=useState(''); const { login, loginWithToken, refresh } = useAuth(); const nav=useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  // SPA OAuth callback handling - Vercel rewrite ensures /login?code=... or /login?status=... is handled client-side without 404
+  // SPA OAuth callback handling - Vercel rewrite ensures /login?token=...&status=success is handled without 404
+  // Extract token immediately on mount from useSearchParams OR window.location.search to persist session
   useEffect(() => {
-    const token = searchParams.get('token') || searchParams.get('access_token')
-    const status = searchParams.get('status')
-    const error = searchParams.get('error') || searchParams.get('detail')
+    // Check both useSearchParams and window.location.search for robustness (hard redirect vs SPA)
+    const urlParams = new URLSearchParams(window.location.search)
+    const token = searchParams.get('token') || searchParams.get('access_token') || urlParams.get('token') || urlParams.get('access_token')
+    const status = searchParams.get('status') || urlParams.get('status')
+    const error = searchParams.get('error') || searchParams.get('detail') || urlParams.get('error') || urlParams.get('detail') || urlParams.get('message')
+    const code = searchParams.get('code') || urlParams.get('code')
+
+    const handleToken = async (t: string) => {
+      try {
+        // Persist session
+        localStorage.setItem('token', t)
+        // Cleanly update Auth state so isAuthenticated becomes true
+        await loginWithToken(t)
+        // Also refresh to ensure user is loaded
+        await refresh()
+        // Clean URL params without hard reload
+        setSearchParams({}, { replace: true })
+        // Navigate to dashboard
+        nav('/dashboard', { replace: true })
+      } catch (e) {
+        // Fallback: still store and navigate even if /me fails (mock token)
+        localStorage.setItem('token', t)
+        setSearchParams({}, { replace: true })
+        nav('/dashboard', { replace: true })
+      }
+    }
+
     if (token) {
-      localStorage.setItem('token', token)
-      nav('/dashboard', { replace: true })
-    } else if (status === 'success') {
-      // Backend redirected after Google OAuth to /login?status=success - treat as success
-      nav('/dashboard', { replace: true })
-    } else if (error || status === 'error') {
-      setErr(decodeURIComponent(error || 'OAuth failed'))
+      void handleToken(token)
+      return
     }
-    // Handle OAuth code without full reload - if code present, exchange via SPA
-    const code = searchParams.get('code')
+
+    if (status === 'success' && !token) {
+      // Backend redirected with status=success but no token (e.g., Drive linking) - check if we already have token
+      const existing = localStorage.getItem('token')
+      if (existing) {
+        void refresh().then(() => nav('/dashboard', { replace: true }))
+      } else {
+        // No token yet, maybe backend sent code instead - keep showing login but clear params
+        setSearchParams({}, { replace: true })
+      }
+      return
+    }
+
+    if (error || status === 'error') {
+      const msg = decodeURIComponent(error || 'OAuth failed')
+      setErr(msg)
+      // Explicit error toast/alert so user knows what went wrong
+      console.error('[oauth] error:', msg)
+      setSearchParams({}, { replace: true })
+      return
+    }
+
     if (code && !token && !status) {
-      // Let backend handle exchange via redirect to /settings?status=success
-      // No hard reload - use SPA navigation to avoid Vercel 404
       console.log('[oauth] code received on /login, waiting for backend redirect...')
+      // Optionally exchange code via SPA: call backend callback without hard reload
+      // This avoids Vercel 404 on hard reload to /api/auth/google/callback
     }
-  }, [searchParams, nav])
+  }, [searchParams, nav, loginWithToken, refresh, setSearchParams])
   const submit=async(e:any)=>{
     e.preventDefault(); setErr('');
     if (!email.includes('@')) { setErr('Please enter a valid email'); return }
