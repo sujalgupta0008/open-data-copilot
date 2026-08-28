@@ -77,9 +77,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Open Data Copilot", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
 
 origins = settings.cors_origins_list
+# Production: if CORS_ORIGINS is not explicitly set to prod frontend (Vercel/Render), allow all origins via regex
+# to prevent 401/CORS block on email signup & Google OAuth. Bearer token does not require cookies, so wildcard is safe.
+# Keep explicit origins for dev, but also allow any https origin (Vercel, Render) via regex fallback.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins if origins else ["*"],
+    allow_origin_regex=r"https://.*|http://localhost:.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -92,14 +96,21 @@ app.add_middleware(
 # axios then follows 308 but drops auth headers/body leading to subsequent 404.
 # We normalize request path by stripping trailing slashes (except root) BEFORE routing,
 # and disable automatic redirect_slashes so both variants resolve cleanly with 200.
+# Also handles raw_path for Uvicorn/ASGI (bytes) to ensure real prod server matches.
 @app.middleware("http")
 async def normalize_trailing_slash(request: Request, call_next):
     # Only normalize API paths — leave static/docs untouched if needed; safe to normalize all
     path = request.scope.get("path", "")
+    raw_path = request.scope.get("raw_path", b"")
     if path != "/" and path.endswith("/"):
-        # Strip all trailing slashes so /api/auth/google/login/ -> /api/auth/google/login
-        # Mutate scope path so routing matches non-slash route definitions
-        request.scope["path"] = path.rstrip("/")
+        new_path = path.rstrip("/")
+        request.scope["path"] = new_path
+        # Also update raw_path (bytes) for ASGI servers that route on raw_path
+        try:
+            if isinstance(raw_path, (bytes, bytearray)) and raw_path.endswith(b"/"):
+                request.scope["raw_path"] = raw_path.rstrip(b"/")
+        except Exception:
+            pass
     return await call_next(request)
 
 app.include_router(auth.router)

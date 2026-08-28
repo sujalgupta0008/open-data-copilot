@@ -8,10 +8,25 @@ import api from '@/services/api'
 
 export default function Login(){
   const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [err,setErr]=useState(''); const { login } = useAuth(); const nav=useNavigate()
-  const submit=async(e:any)=>{e.preventDefault(); setErr(''); try{ await login(email,password); nav('/dashboard')}catch(ex:any){ setErr(ex.response?.data?.detail||'Login failed')}}
+  const submit=async(e:any)=>{
+    e.preventDefault(); setErr('');
+    if (!email.includes('@')) { setErr('Please enter a valid email'); return }
+    if (!password) { setErr('Password is required'); return }
+    try{ await login(email,password); nav('/dashboard')}catch(ex:any){
+      const detail = ex.response?.data?.detail
+      const msg = Array.isArray(detail) ? detail.map((d:any)=>d.msg).join(', ') : (detail || 'Login failed')
+      if (ex.response?.status === 404 || ex.response?.status === 308) {
+        setErr('Login endpoint not found (404/308). Check VITE_API_URL and backend CORS. Backend should be ' + ((import.meta as any).env?.VITE_API_URL || 'proxy via Vite'))
+      } else {
+        setErr(msg)
+      }
+      console.error('[login] failed', ex.response?.status, ex.response?.data)
+    }
+  }
   const handleGoogleLogin = async () => {
     setErr('')
     try {
+      // Backend route is GET /api/auth/google/login (no trailing slash) - must match exactly to avoid 308
       const res = await api.get('/api/auth/google/login')
       const auth_url = res.data?.auth_url
       if (auth_url) {
@@ -20,7 +35,14 @@ export default function Login(){
         setErr('Failed to get Google auth URL')
       }
     } catch (ex: any) {
-      setErr(ex.response?.data?.detail || 'Google login failed')
+      const detail = ex.response?.data?.detail
+      const msg = Array.isArray(detail) ? detail.map((d:any)=>d.msg).join(', ') : detail
+      if (ex.response?.status === 404 || ex.response?.status === 308) {
+        setErr('Google login endpoint not found (404/308). Ensure backend is running and VITE_API_URL='+ ((import.meta as any).env?.VITE_API_URL || 'proxy'))
+      } else {
+        setErr(msg || 'Google login failed')
+      }
+      console.error('[google login] failed', ex.response?.status, ex.response?.data)
     }
   }
   return (
