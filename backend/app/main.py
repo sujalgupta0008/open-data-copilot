@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Scheduler shutdown failed: {e}")
 
 
-app = FastAPI(title="Open Data Copilot", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Open Data Copilot", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
 
 origins = settings.cors_origins_list
 app.add_middleware(
@@ -84,6 +84,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Fix 308 redirect loop on trailing-slash mismatch:
+# FastAPI/Starlette by default 307/308-redirects /path/ <-> /path depending on route definition.
+# Frontend may call /api/auth/google/login or /api/auth/google/login/ interchangeably;
+# axios then follows 308 but drops auth headers/body leading to subsequent 404.
+# We normalize request path by stripping trailing slashes (except root) BEFORE routing,
+# and disable automatic redirect_slashes so both variants resolve cleanly with 200.
+@app.middleware("http")
+async def normalize_trailing_slash(request: Request, call_next):
+    # Only normalize API paths — leave static/docs untouched if needed; safe to normalize all
+    path = request.scope.get("path", "")
+    if path != "/" and path.endswith("/"):
+        # Strip all trailing slashes so /api/auth/google/login/ -> /api/auth/google/login
+        # Mutate scope path so routing matches non-slash route definitions
+        request.scope["path"] = path.rstrip("/")
+    return await call_next(request)
 
 app.include_router(auth.router)
 app.include_router(datasets.router)

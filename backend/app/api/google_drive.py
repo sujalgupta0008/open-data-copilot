@@ -23,11 +23,12 @@ from app.services.google_drive import GoogleDriveService, _mock_tokens, cleanup_
 from app.services.drive_middleware import DriveMiddleware
 from app.core.config import settings
 
-router = APIRouter(prefix="/api/auth/google", tags=["google-drive-oauth"])
-drive_router = APIRouter(prefix="/api/drive", tags=["google-drive-workspace"])
+router = APIRouter(prefix="/api/auth/google", tags=["google-drive-oauth"], redirect_slashes=False)
+drive_router = APIRouter(prefix="/api/drive", tags=["google-drive-workspace"], redirect_slashes=False)
 
 
 @router.get("/login")
+@router.get("/login/", include_in_schema=False)
 def google_login(current_user: Optional[User] = Depends(get_current_user_optional)):
     """
     Initiate Google OAuth 2.0 with scope drive.file.
@@ -51,6 +52,7 @@ def google_login(current_user: Optional[User] = Depends(get_current_user_optiona
 
 
 @router.get("/callback")
+@router.get("/callback/", include_in_schema=False)
 def google_callback(code: str = Query(...), state: Optional[str] = Query(None), db: Session = Depends(get_db)):
     """
     OAuth callback: exchange code -> token, auto-create Open_Data_Copilot_Workspace folder.
@@ -91,6 +93,7 @@ def google_callback(code: str = Query(...), state: Optional[str] = Query(None), 
 
 
 @router.post("/mock-login")
+@router.post("/mock-login/", include_in_schema=False)
 def mock_google_login(current_user: User = Depends(get_current_user)):
     """
     Mock OAuth login for tests/e2e — instantly authenticates and creates workspace.
@@ -129,6 +132,7 @@ def mock_google_login(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/status")
+@router.get("/status/", include_in_schema=False)
 def google_status(current_user: User = Depends(get_current_user)):
     svc = GoogleDriveService(user_id=current_user.id)
     ws = svc.get_workspace_info()
@@ -138,6 +142,7 @@ def google_status(current_user: User = Depends(get_current_user)):
 # ---- Drive workspace routers (protected) ----
 
 @drive_router.get("/workspace")
+@drive_router.get("/workspace/", include_in_schema=False)
 def get_workspace(current_user: User = Depends(get_current_user)):
     mw = DriveMiddleware(user_id=current_user.id)
     # Auto-create on first check (idempotent)
@@ -147,6 +152,7 @@ def get_workspace(current_user: User = Depends(get_current_user)):
 
 
 @drive_router.get("/files")
+@drive_router.get("/files/", include_in_schema=False)
 def list_drive_files(current_user: User = Depends(get_current_user)):
     mw = DriveMiddleware(user_id=current_user.id)
     files = mw.list_drive_files()
@@ -155,12 +161,14 @@ def list_drive_files(current_user: User = Depends(get_current_user)):
 
 
 @drive_router.post("/upload")
+@drive_router.post("/upload/", include_in_schema=False)
 async def drive_upload(file: Optional[bytes] = None, current_user: User = Depends(get_current_user)):
     # Not used directly; datasets upload handles drive+tmp
     return {"message": "Use /api/datasets/upload which now wraps Drive middleware"}
 
 
 @drive_router.post("/cleanup")
+@drive_router.post("/cleanup/", include_in_schema=False)
 def drive_cleanup(payload: dict, current_user: User = Depends(get_current_user)):
     """
     Explicit cleanup hook trigger: POST /api/drive/cleanup {tmp_path: "..."}
@@ -177,6 +185,7 @@ def drive_cleanup(payload: dict, current_user: User = Depends(get_current_user))
 
 
 @drive_router.get("/verify")
+@drive_router.get("/verify/", include_in_schema=False)
 def drive_verify(current_user: User = Depends(get_current_user)):
     """
     Verification helper for BYOS tests: checks workspace exists and can write/read.

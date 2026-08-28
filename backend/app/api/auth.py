@@ -6,9 +6,10 @@ from app.models.models import User
 from app.schemas.schemas import UserCreate, UserLogin, TokenOut, UserOut
 from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["auth"], redirect_slashes=False)
 
 @router.post("/register", response_model=TokenOut)
+@router.post("/register/", response_model=TokenOut, include_in_schema=False)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
@@ -28,6 +29,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     return {"access_token": token, "token_type": "bearer", "user": user}
 
 @router.post("/login", response_model=TokenOut)
+@router.post("/login/", response_model=TokenOut, include_in_schema=False)
 def login(payload: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.password_hash):
@@ -43,9 +45,11 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     return {"access_token": token, "token_type": "bearer", "user": user}
 
 @router.get("/me", response_model=UserOut)
+@router.get("/me/", response_model=UserOut, include_in_schema=False)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 @router.post("/logout")
+@router.post("/logout/", include_in_schema=False)
 def logout(current_user: User = Depends(get_current_user)):
     return {"message": "Logged out"}
